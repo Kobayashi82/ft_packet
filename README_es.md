@@ -58,6 +58,18 @@ La compilación genera una librería estática:
 lib/libft_packet.a
 ```
 
+Para ejecutar el tester automático de API:
+
+```bash
+make test
+```
+
+Para una prueba real enviando un ping construido con la librería:
+
+```bash
+sudo make test-live TARGET_IP=127.0.0.1
+```
+
 ## 🖥️ Uso
 
 ### Integración en compilación
@@ -169,6 +181,9 @@ El repositorio incluye notas por protocolo y un plan manual de pruebas:
 ### Validación sugerida
 
 El plan de pruebas actual está orientado a inspeccionar paquetes con herramientas como:
+
+- `make test` para una pasada rápida de regresión sobre la API pública
+- `make test-live TARGET_IP=<ip>` para enviar un `ICMP Echo Request` real y esperar el `Echo Reply`
 
 - `Wireshark` o `tcpdump` para validar layout y checksums
 - `netcat` para probar payloads UDP

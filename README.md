@@ -58,6 +58,18 @@ The build generates a static library:
 lib/libft_packet.a
 ```
 
+To run the automated API smoke tests:
+
+```bash
+make test
+```
+
+For a real network test that sends a ping built by the library:
+
+```bash
+sudo make test-live TARGET_IP=127.0.0.1
+```
+
 ## 🖥️ Usage
 
 ### Build integration
@@ -169,6 +181,9 @@ The repository includes protocol-specific notes and a manual test plan:
 ### Suggested validation
 
 The current test plan is oriented around packet inspection with tools such as:
+
+- `make test` for a quick regression pass over the public API
+- `make test-live TARGET_IP=<ip>` to send a real ICMP Echo Request and wait for the Echo Reply
 
 - `Wireshark` or `tcpdump` to validate header layout and checksums
 - `netcat` for UDP payload tests

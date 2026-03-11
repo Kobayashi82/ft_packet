@@ -6,7 +6,7 @@
 /*   By: vzurera- <vzurera-@student.42malaga.com    +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/04 11:22:45 by vzurera-          #+#    #+#             */
-/*   Updated: 2026/03/05 21:33:16 by vzurera-         ###   ########.fr       */
+/*   Updated: 2026/03/11 22:11:37 by vzurera-         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,6 +25,7 @@
 #pragma region "Includes"
 
 	#include "packet.h"
+	#include <stddef.h>
 	#include <string.h>
 
 #pragma endregion
@@ -41,6 +42,20 @@
 		sum += (sum >> 16);
 
 		return (unsigned short)(~sum);
+	}
+
+	static int checksum_match(const void *data, uint16_t len, uint16_t checksum_offset) {
+		uint8_t		copy[60];
+
+		if (!data || len > sizeof(copy) || checksum_offset + sizeof(uint16_t) > len)
+			return (0);
+		memcpy(copy, data, len);
+		*(uint16_t *)(copy + checksum_offset) = 0;
+		return (*(const uint16_t *)((const uint8_t *)data + checksum_offset) == checksum(copy, len));
+	}
+
+	static int protocol_is_supported(uint8_t protocol) {
+		return (protocol == IPPROTO_ICMP || protocol == IPPROTO_UDP || protocol == IPPROTO_TCP);
 	}
 
 #pragma endregion
@@ -214,43 +229,89 @@
 
 	#pragma region "Validate"
 
-		#pragma region "ARP"
-
-			int arp_validate(t_packet *packet) {
-				if (!packet || !packet->arp) return (0);
-
-				if (!packet->ethernet) return (1);
-				if (packet->ethernet->ethertype != ETH_P_ARP) return (1);
-				if (memcmp(packet->arp->sha, packet->ethernet->src_mac, sizeof(packet->arp->sha))) return (1);
-				if (packet->arp->oper == ARPOP_REPLY && packet->arp->tha != packet->ethernet->dst_mac) return (1);
-
-				return (0);
+		static int trailing_padding_is_valid(const uint8_t *options, uint8_t start, uint8_t len) {
+			while (start < len) {
+				if (options[start] != EOOL && options[start] != NOP)
+					return (0);
+				start++;
 			}
-
-		#pragma endregion
+			return (1);
+		}
 
 		#pragma region "IP"
 
 			static int ip_option_validate(t_packet *packet) {
+				uint8_t		*options;
+				uint8_t		len;
+				uint8_t		index;
+				uint8_t		opt_len;
+
 				if (!packet || !packet->ip_option) return (0);
 
 				if (!packet->ip) return (1);
-				// invalid options
+				if (!packet->ip_option_len || packet->ip_option_len > sizeof(((t_ip_option *)0)->options)) return (1);
+				if (packet->ip_option_len % 4) return (1);
+
+				options = (uint8_t *)packet->ip_option;
+				len = packet->ip_option_len;
+				index = 0;
+				while (index < len) {
+					if (options[index] == EOOL)
+						return (trailing_padding_is_valid(options, index + 1, len) ? 0 : 1);
+					if (options[index] == NOP) {
+						index++;
+						continue;
+					}
+					if (index + 1 >= len) return (1);
+					opt_len = options[index + 1];
+					if (opt_len < 2 || index + opt_len > len) return (1);
+					if (options[index] == TS) {
+						if (opt_len < 8) return (1);
+						if (((options[index + 3] & 0x0F) != 0) && ((options[index + 3] & 0x0F) != 1)) return (1);
+						if (options[index + 2] < 5 || options[index + 2] > opt_len + 1) return (1);
+					}
+					else if (options[index] == RR) {
+						if (opt_len < 7 || (opt_len - 3) % 4) return (1);
+						if (options[index + 2] < 4 || options[index + 2] > opt_len + 1) return (1);
+					}
+					else if (options[index] == RTRALT) {
+						if (opt_len != 4) return (1);
+					}
+					else return (1);
+					index += opt_len;
+				}
 
 				return (0);
 			}
 
-			int ip_validate(t_packet *packet) {
+			static int ip_validate(t_packet *packet) {
+				uint8_t		ihl;
+				uint16_t	header_len;
+				uint16_t	total_len;
+				uint16_t	expected_len;
+
 				if (!packet || !packet->ip) return (0);
 
-				// invalid ver and ihl
-				// invalid dscp/ecn
-				// total length < ip header
-				// invalid protocol
-				// invalid src addr
-				// invalid dst addr
+				if (packet->ethernet && ntohs(packet->ethernet->ethertype) != ETH_P_IP) return (1);
+				if (packet->arp) return (1);
+				if ((packet->ip->ver_ihl >> 4) != VERSION) return (1);
+				ihl = packet->ip->ver_ihl & 0x0F;
+				if (ihl < 5 || ihl > 15) return (1);
+				header_len = ihl * 4;
+				if (packet->ip_option && ihl != 5 + (packet->ip_option_len / 4)) return (1);
+				if (!packet->ip_option && ihl != 5) return (1);
+				total_len = ntohs(packet->ip->length);
+				if (total_len < header_len) return (1);
+				expected_len = packet->packet_len;
+				if (packet->ethernet) expected_len -= sizeof(t_ethernet);
+				if (expected_len != total_len) return (1);
+				if (packet->icmp && packet->ip->protocol != IPPROTO_ICMP) return (1);
+				if (packet->udp && packet->ip->protocol != IPPROTO_UDP) return (1);
+				if (packet->tcp && packet->ip->protocol != IPPROTO_TCP) return (1);
+				if (!packet->icmp && !packet->udp && !packet->tcp && !protocol_is_supported(packet->ip->protocol)) return (1);
+				if (!checksum_match(packet->ip, header_len, offsetof(t_ip, checksum))) return (1);
 
-				ip_option_validate(packet);
+				if (ip_option_validate(packet)) return (1);
 
 				return (0);
 			}
@@ -259,11 +320,30 @@
 
 		#pragma region "ICMP"
 
-			int icmp_validate(t_packet *packet) {
-				if (!packet) return (1);
+			static int icmp_validate(t_packet *packet) {
+				uint16_t	icmp_len;
 
-				// dst port
-				// 
+				if (!packet || !packet->icmp) return (1);
+				if (ip_validate(packet)) return (1);
+				if (!packet->ip) return (1);
+				if (packet->ip->protocol != IPPROTO_ICMP) return (1);
+				icmp_len = sizeof(t_icmp) + packet->payload_len;
+				if (ntohs(packet->ip->length) != ((packet->ip->ver_ihl & 0x0F) * 4) + icmp_len) return (1);
+				if (packet->icmp->type == ICMP_ECHO || packet->icmp->type == ICMP_ECHOREPLY || packet->icmp->type == ICMP_TIMESTAMP || packet->icmp->type == ICMP_TIMESTAMPREPLY) {
+					if (packet->icmp->code != 0) return (1);
+				}
+				else if (packet->icmp->type == ICMP_DEST_UNREACH) {
+					if (packet->icmp->code > NR_ICMP_UNREACH) return (1);
+				}
+				else if (packet->icmp->type == ICMP_TIME_EXCEEDED) {
+					if (packet->icmp->code > 1) return (1);
+				}
+				else if (packet->icmp->type == ICMP_REDIRECT) {
+					if (packet->icmp->code > 3) return (1);
+				}
+				else return (1);
+				if (!checksum_match(packet->icmp, icmp_len, offsetof(t_icmp, checksum))) return (1);
+
 				return (0);
 			}
 
@@ -271,8 +351,22 @@
 
 		#pragma region "UDP"
 
-			int udp_validate(t_packet *packet) {
-				if (!packet) return (1);
+			static int udp_validate(t_packet *packet) {
+				t_udp		copy;
+				uint16_t	header_len;
+				uint16_t	udp_len;
+
+				if (!packet || !packet->udp) return (1);
+				if (ip_validate(packet)) return (1);
+				if (!packet->ip) return (1);
+				if (packet->ip->protocol != IPPROTO_UDP) return (1);
+				header_len = (packet->ip->ver_ihl & 0x0F) * 4;
+				udp_len = ntohs(packet->udp->length);
+				if (udp_len != sizeof(t_udp) + packet->payload_len) return (1);
+				if (ntohs(packet->ip->length) != header_len + udp_len) return (1);
+				copy = *packet->udp;
+				udp_set_checksum(&copy, packet->ip->src_addr, packet->ip->dst_addr, packet->payload_len, packet->payload);
+				if (copy.checksum != packet->udp->checksum) return (1);
 
 				return (0);
 			}
@@ -282,15 +376,82 @@
 		#pragma region "TCP"
 
 			static int tcp_option_validate(t_packet *packet) {
+				uint8_t		*options;
+				uint8_t		index;
+				uint8_t		kind;
+				uint8_t		opt_len;
+
 				if (!packet) return (1);
+				if (!packet->tcp_option) return (0);
+				if (!packet->tcp_option_len || packet->tcp_option_len > sizeof(((t_tcp_option *)0)->options)) return (1);
+				if (packet->tcp_option_len % 4) return (1);
+				options = (uint8_t *)packet->tcp_option;
+				index = 0;
+				while (index < packet->tcp_option_len) {
+					kind = options[index];
+					if (kind == EOL)
+						return (trailing_padding_is_valid(options, index + 1, packet->tcp_option_len) ? 0 : 1);
+					if (kind == NOP) {
+						index++;
+						continue;
+					}
+					if (index + 1 >= packet->tcp_option_len) return (1);
+					opt_len = options[index + 1];
+					if (opt_len < 2 || index + opt_len > packet->tcp_option_len) return (1);
+					if (kind == MSS) {
+						if (opt_len != 4) return (1);
+					}
+					else if (kind == WSOPT) {
+						if (opt_len != 3 || options[index + 2] > 14) return (1);
+					}
+					else if (kind == SACK_PERMITTED) {
+						if (opt_len != 2) return (1);
+					}
+					else if (kind == SACK) {
+						if (opt_len < 10 || opt_len > 34 || (opt_len - 2) % 8) return (1);
+					}
+					else if (kind == TIMESTAMPS) {
+						if (opt_len != 10) return (1);
+					}
+					else return (1);
+					index += opt_len;
+				}
 
 				return (0);
 			}
 
-			int tcp_validate(t_packet *packet) {
-				if (!packet) return (1);
+			static int tcp_validate(t_packet *packet) {
+				struct {
+					t_tcp	tcp;
+					uint8_t	options[40];
+				} copy;
+				uint8_t		data_offset;
+				uint16_t	header_len;
+				uint16_t	ip_header_len;
+				uint16_t	tcp_len;
 
-				tcp_option_validate(packet);
+				if (!packet || !packet->tcp) return (1);
+				if (ip_validate(packet)) return (1);
+				if (!packet->ip) return (1);
+				if (packet->ip->protocol != IPPROTO_TCP) return (1);
+				if (packet->tcp->data_offset & 0x0F) return (1);
+				data_offset = packet->tcp->data_offset >> 4;
+				if (data_offset < 5 || data_offset > 15) return (1);
+				header_len = data_offset * 4;
+				if (header_len != sizeof(t_tcp) + packet->tcp_option_len) return (1);
+				if (ntohs(packet->tcp->dst_port) == 0) return (1);
+				if (!(packet->tcp->flags & URG) && packet->tcp->urg_ptr != 0) return (1);
+				ip_header_len = (packet->ip->ver_ihl & 0x0F) * 4;
+				tcp_len = ntohs(packet->ip->length) - ip_header_len;
+				if (tcp_len != header_len + packet->payload_len) return (1);
+				if (tcp_option_validate(packet)) return (1);
+				memset(&copy, 0, sizeof(copy));
+				copy.tcp = *packet->tcp;
+				if (packet->tcp_option_len)
+					memcpy(copy.options, packet->tcp_option, packet->tcp_option_len);
+				tcp_set_checksum(&copy.tcp, packet->ip->src_addr, packet->ip->dst_addr, packet->tcp_option_len, packet->payload_len, packet->payload);
+				if (copy.tcp.checksum != packet->tcp->checksum) return (1);
+
 
 				return (0);
 			}
@@ -358,17 +519,17 @@
 			int tcp_complete(t_packet *packet, uint32_t src_addr, uint32_t dst_addr) {
 				if (!packet || !packet->tcp) return (1);
 
-				uint16_t total_oct = 0;
+				uint16_t options_len = 0;
 				if (packet->tcp_option)
-					total_oct = packet->tcp_option_len / 4;
+					options_len = packet->tcp_option_len;
 
-				uint8_t data_offset = (sizeof(t_tcp) + total_oct) / 4;
+				uint8_t data_offset = (sizeof(t_tcp) + options_len) / 4;
 				if (data_offset < 5 || data_offset > 15) return (1);
 				tcp_set_data_offset(packet->tcp, data_offset);
 
 				ip_complete(packet);
 
-				tcp_set_checksum(packet->tcp, src_addr, dst_addr, total_oct, packet->payload_len, packet->payload);
+				tcp_set_checksum(packet->tcp, src_addr, dst_addr, options_len, packet->payload_len, packet->payload);
 
 				return (tcp_validate(packet));
 			}

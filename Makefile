@@ -6,7 +6,7 @@
 #    By: vzurera- <vzurera-@student.42malaga.com    +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2025/07/05 21:39:40 by vzurera-          #+#    #+#              #
-#    Updated: 2026/03/11 13:24:54 by vzurera-         ###   ########.fr        #
+#    Updated: 2026/03/11 22:18:40 by vzurera-         ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -86,10 +86,10 @@ _compile: $(OBJS)
 #	Create folder
 	@mkdir -p $(BLD_DIR) $(LIB_DIR)
 
-#	Archive
-	@printf "\r%50s\r\t$(CYAN)Compiling... $(YELLOW)$(NAME)$(NC)"
+#	Compile
+	@printf "\r%50s\r\t$(CYAN)Compiling... $(YELLOW)$(NAME).a$(NC)"
 	@ar rcs $(TARGET) $(OBJS)
-	@printf "\r%50s\r\t$(CYAN)Compiled    $(GREEN)✓ $(YELLOW)$(NAME)$(NC)\n"
+	@printf "\r%50s\r\t$(CYAN)Compiled    $(GREEN)✓ $(YELLOW)$(NAME).a$(NC)\n"
 
 	@$(MAKE) -s _progress; printf "\n"
 	@$(MAKE) -s _show_cursor
@@ -162,10 +162,10 @@ re:
 #	Delete objects
 	@$(MAKE) -s _delete_objects
 	@if [ -f $(TARGET) ]; then \
-		printf "\t$(CYAN)Deleting... $(YELLOW)$(TARGET)$(NC)"; \
+		printf "\t$(CYAN)Deleting... $(YELLOW)$(NAME).a$(NC)"; \
 		rm -f $(TARGET); \
 	fi
-	@printf "\r%50s\r\t$(CYAN)Deleted     $(GREEN)✓ $(YELLOW)$(NAME)$(NC)\n"
+	@printf "\r%50s\r\t$(CYAN)Deleted     $(GREEN)✓ $(YELLOW)$(NAME).a$(NC)\n"
 	@$(MAKE) -s _progress; printf "\n"
 	@-find $(BLD_DIR) $(LIB_DIR) -type d -empty -delete >/dev/null 2>&1 || true
 	@printf "\t$(WHITE)───────────────────────────\n$(NC)"
@@ -199,21 +199,14 @@ fclean:
 
 	@$(MAKE) -s _delete_objects
 	@if [ -f $(TARGET) ]; then \
-		printf "\t$(CYAN)Deleting... $(YELLOW)$(NAME)$(NC)"; \
+		printf "\t$(CYAN)Deleting... $(YELLOW)$(NAME).a$(NC)"; \
 		rm -f $(TARGET); \
 	fi
-	@printf "\r%50s\r\t$(CYAN)Deleted     $(GREEN)✓ $(YELLOW)$(NAME)$(NC)\n"
+	@printf "\r%50s\r\t$(CYAN)Deleted     $(GREEN)✓ $(YELLOW)$(NAME).a$(NC)\n"
 	@find $(BLD_DIR) $(LIB_DIR) -type d -empty -delete >/dev/null 2>&1 || true
 
 	@$(MAKE) -s _progress; printf "\n"
 	@$(MAKE) -s _show_cursor
-
-# ──────────── #
-# ─── TEST ─── #
-# ──────────── #
-
-test: $(TARGET)
-	@$(CC) src/main.c $(TARGET) -o test
 
 # ───────────────────────────────────────────────────────────── #
 # ───────────────────────── FUNCTIONS ───────────────────────── #
@@ -278,4 +271,4 @@ _progress:
 # ── PHONY ── #
 # ─────────── #
 
-.PHONY: all clean fclean re wipe _show_title _title _hide_cursor _show_cursor _delete_objects _progress test
+.PHONY: all clean fclean re wipe _show_title _title _hide_cursor _show_cursor _delete_objects _progress

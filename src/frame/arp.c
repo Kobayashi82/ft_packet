@@ -6,7 +6,7 @@
 /*   By: vzurera- <vzurera-@student.42malaga.com    +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/01 19:22:05 by vzurera-          #+#    #+#             */
-/*   Updated: 2026/03/05 21:32:50 by vzurera-         ###   ########.fr       */
+/*   Updated: 2026/03/11 22:10:46 by vzurera-         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -160,10 +160,10 @@
 		header->plen  = 4;                  // IP length = 4
 		header->oper  = htons(oper);        // Operation (Request = 1, Reply = 2)
 
-		memcpy(header->sha, sha, 6);     // Sender MAC
+		memcpy(header->sha, sha, 6);    	 // Sender MAC
 		header->spa = spa;                  // Sender IP
 
-		memcpy(header->tha, tha, 6);     // Target MAC
+		memcpy(header->tha, tha, 6);     	// Target MAC
 		header->tpa = tpa;                  // Target IP
 
 		return (0);
@@ -174,9 +174,9 @@
 	}
 
 	int arp_create_request(t_arp *header, const uint8_t *sha, uint32_t spa, uint32_t tpa) {
-		uint8_t broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+		uint8_t target[6] = {0, 0, 0, 0, 0, 0};
 
-		return (arp_create(header, ARPOP_REQUEST, sha, spa, broadcast, tpa));
+		return (arp_create(header, ARPOP_REQUEST, sha, spa, target, tpa));
 	}
 
 #pragma endregion
