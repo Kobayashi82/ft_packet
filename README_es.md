@@ -225,6 +225,6 @@ Este proyecto está licenciado bajo la WTFPL – [Do What the Fuck You Want to P
 
 **🧭 Desarrollado como parte del curriculum de 42 School 🧭**
 
-*"Build the packet, byte by byte"*
+*"Building packets the hard way"*
 
 </div>
