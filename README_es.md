@@ -2,11 +2,11 @@
 
 ![WIP](https://img.shields.io/badge/work%20in%20progress-yellow?style=for-the-badge)
 ![System & Kernel](https://img.shields.io/badge/System-brown?style=for-the-badge)
-![Network Communication](https://img.shields.io/badge/Network-Communication-blue?style=for-the-badge)
-![ICMP Protocol](https://img.shields.io/badge/Protocol-UDP--TCP--ICMP-green?style=for-the-badge)
+![Network Packets](https://img.shields.io/badge/Network-Packets-blue?style=for-the-badge)
+![Protocols](https://img.shields.io/badge/Protocol-Ethernet--ARP--IPv4--ICMP--UDP--TCP-green?style=for-the-badge)
 ![C Language](https://img.shields.io/badge/Language-C-red?style=for-the-badge)
 
-*Una reimplementación del comando traceroute*
+*Una librería estática en C para construir paquetes de red*
 
 </div>
 
@@ -14,261 +14,191 @@
   <img src="/images/ft_packet.jpg">
 </div>
 
-# ft_traceroute
+# ft_packet
 
 [README in English](README.md)
 
-`ft_traceroute` es una implementación desde cero del comando `traceroute`, una herramienta esencial para el diagnóstico y análisis de rutas de red. Este proyecto explora el funcionamiento de enrutamiento IP y la topología de redes, utilizando técnicas avanzadas de manipulación de `TTL` (Time To Live).
+`ft_packet` es una librería de bajo nivel en C para construir paquetes de red desde cero. Expone headers públicos y helpers para ensamblar tramas `Ethernet`, `ARP`, `IPv4`, `ICMP`, `UDP` y `TCP`, incluyendo opciones de IP/TCP, payload y cálculo final de checksums.
 
-### ¿Qué es Traceroute?
+### ¿Qué es ft_packet?
 
-Traceroute es una utilidad de red que:
+Este proyecto está centrado en la composición de paquetes, no en su captura ni en su envío. Sus objetivos principales son:
 
-- `Mapea la ruta` que siguen los paquetes desde el origen hasta el destino
-- `Identifica routers intermedios` (saltos/hops) en el camino
-- `Mide latencia` de cada salto individual
-- `Diagnostica problemas` de enrutamiento y puntos de fallo
-- `Utiliza TTL decremental` para revelar la topología de red
+- `Construir tramas raw` con un orden de capas controlado
+- `Configurar campos de protocolo` mediante helpers dedicados
+- `Añadir payload y opciones` manteniendo coherencia en la estructura
+- `Completar longitudes y checksums` antes de enviar o inspeccionar el paquete
+- `Exponer una API pública pequeña` para experimentación y herramientas de red
 
-### Funcionamiento Técnico
+### Pila soportada
 
-```
-TTL=1  [Cliente] -----> [Router1] (TTL expired)
-         ^                  |
-         |<--- ICMP Time Exceeded ---
-         
-TTL=2  [Cliente] -----> [Router1] -----> [Router2] (TTL expired)
-         ^                                   |
-         |<--------- ICMP Time Exceeded ----
-         
-TTL=3  [Cliente] -----> [Router1] -----> [Router2] -----> [Destino]
-         ^                                                     |
-         |<-------------- ICMP Echo Reply -------------------
-```
+`ft_packet` puede ensamblar las siguientes capas:
 
-#### Algoritmo Básico
-
-1. `Inicialización`: Comienza con TTL = 1
-2. `Envío de sondas`: Envía múltiples paquetes (típicamente 3) con el mismo TTL
-3. `Recepción de respuestas`: 
-   - ICMP Time Exceeded → Router intermedio identificado
-   - ICMP Echo Reply → Destino alcanzado
-4. `Incremento de TTL`: TTL++ para el siguiente salto
-5. `Repetición`: Continúa hasta alcanzar el destino o máximo TTL
-
-### Tipos de Sondas
-
-ft_traceroute puede usar diferentes protocolos para las sondas:
-
-| Protocolo | Puerto   | Detección      |
-|-----------|----------|----------------|
-| `UDP`     | 33434+   | Puerto cerrado |
-| `ICMP`    | N/A      | Echo Reply     |
-| `TCP`     | Variable | SYN/ACK o RST  |
+| Capa       | Soporte |
+|------------|---------|
+| `Ethernet` | Creación de cabecera de trama |
+| `ARP`      | Creación de request y reply |
+| `IPv4`     | Campos de cabecera y opciones |
+| `ICMP`     | Echo, reply, redirect, unreachable, timestamp |
+| `UDP`      | Creación de cabecera y checksum |
+| `TCP`      | Flags, checksum y opciones |
+| `Payload`  | Inserción de datos arbitrarios |
 
 ## 🔧 Instalación
 
 ```bash
-git clone https://github.com/Kobayashi82/ft_traceroute.git
-cd ft_traceroute
+git clone https://github.com/Kobayashi82/ft_packet.git
+cd ft_packet
 make
+```
+
+La compilación genera una librería estática:
+
+```bash
+lib/libft_packet.a
 ```
 
 ## 🖥️ Uso
 
-### Permisos
+### Integración en compilación
+
+Incluye los headers públicos y enlaza contra la librería generada:
 
 ```bash
-# ft_traceroute requiere privilegios root para raw sockets
-sudo ./ft_traceroute destino.com
-
-# Alternativa: configurar capabilities
-sudo setcap cap_net_raw+ep ./ft_traceroute
-./ft_traceroute destino.com
+cc example.c -Iinc -Llib -lft_packet
 ```
 
-### Ejecución
+### Flujo básico
 
-```bash
-sudo ./ft_traceroute [opciones] <destino> [packetlen]
+El flujo previsto es:
+
+1. `Crear cabeceras` con helpers como `ethernet_create`, `ip_create`, `icmp_create_echo`, `udp_create` o `tcp_create`
+2. `Añadir cada bloque` a un `t_packet` con `packet_add`
+3. `Añadir payload` si el protocolo de transporte lo permite
+4. `Finalizar el paquete` con `icmp_complete`, `udp_complete` o `tcp_complete`
+5. `Reutilizar o reiniciar` el paquete con `packet_clear`
+
+### Resumen del API público
+
+| Módulo | Capacidades principales |
+|--------|-------------------------|
+| `packet.h` | `packet_add`, `packet_clear` y helpers de completado |
+| `frame/ethernet.h` | Setters Ethernet y `ethernet_create` |
+| `frame/arp.h` | Helpers para ARP request y reply |
+| `frame/ip.h` | Setters IPv4, checksum y opciones IP |
+| `frame/icmp.h` | Creación de mensajes ICMP y checksum |
+| `frame/udp.h` | Creación de cabecera UDP y pseudo-header checksum |
+| `frame/tcp.h` | Flags TCP, checksum y opciones TCP |
+
+### Ejemplo mínimo
+
+```c
+#include "packet.h"
+
+int main(void)
+{
+    t_packet packet = {0};
+    t_ip ip = {0};
+    t_icmp icmp = {0};
+    char payload[] = "hello";
+
+    ip_create(&ip, 0, 0, 0, 0x1234, 0, 0, 0, 64, IPPROTO_ICMP, 0, 0);
+    icmp_create_echo(&icmp, 0x42, 1);
+    packet_add(&packet, &ip, sizeof(ip), IP);
+    packet_add(&packet, &icmp, sizeof(icmp), ICMP);
+    packet_add(&packet, payload, sizeof(payload) - 1, PAYLOAD);
+    icmp_complete(&packet);
+    packet_clear(&packet);
+    return (0);
+}
 ```
-
-| Argumento   | Tipo          | Descripción                                          | Ejemplo                 |
-|-------------|---------------|------------------------------------------------------|-------------------------|
-| `destino`   | IPv4/Hostname | Dirección IP o nombre de host                        | `8.8.8.8`, `google.com` |
-| `packetlen` | Número        | Longitud del paquete (default: IP header + 40 bytes) | `60`, `1500`            |
-
-#### Básicas
-| Opción     | Forma Larga | Descripción                  |
-|------------|-------------|------------------------------|
-| `-h`, `-?` | `--help`    | Muestra información de ayuda |
-| `-V`       | `--version` | Versión del programa         |
-|            | `--usage`   | Mensaje corto de uso         |
-
-#### Control de Ruta
-| Opción | Forma Larga         | Parámetro | Descripción                                                                                         |
-|--------|---------------------|-----------|-----------------------------------------------------------------------------------------------------|
-| `-m`   | `--max-hops=NUM`    | Número    | Máximo número de saltos (default: 30)                                                               |
-| `-f`   | `--first-hop=NUM`   | Número    | TTL inicial (default: 1)                                                                            |
-| `-q`   | `--queries=NUM`     | Número    | Número de sondas por salto (default: 3)                                                             |
-| `-w`   | `--wait=NUM`        | Segundos  | Tiempo de espera por respuesta (default: 5)                                                         |
-| `-N`   | `--sim-queries=NUM` | Número    | Número de sondas simultáneas (default: 16)                                                          |
-| `-z`   | `--sendwait=NUM`    | Segundos  | Intervalo mínimo entre sondas (default: 0). Si NUM es mayor que 10, se interpreta como milisegundos |
-
-#### Configuración de Sondas
-| Opción | Forma Larga       | Parámetro | Descripción                                  |
-|--------|-------------------|-----------|----------------------------------------------|
-| `-p`   | `--port=NUM`      | Puerto    | Puerto base para sondas UDP (default: 33434) |
-| `-s`   | `--source=ADDR`   | IP        | Dirección IP origen                          |
-| `-t`   | `--tos=NUM`       | Número    | Type of Service (TOS)                        |
-| `-F`   | `--dont-fragment` | -         | Activa flag Don't Fragment                   |
-|
-
-#### Métodos de Sondeo
-| Opción | Forma Larga | Descripción                           |
-|--------|-------------|---------------------------------------|
-| `-I`   | `--icmp`    | Usa ICMP Echo Request en lugar de UDP |
-| `-T`   | `--tcp`     | Usa TCP SYN para sondas               |
-| `-U`   | `--udp`     | Usa UDP (comportamiento por defecto)  |
-
-#### Opciones de Red
-| Opción | Forma Larga          | Parámetro   | Descripción                                   |
-|--------|----------------------|-------------|-----------------------------------------------|
-| `-n`   | `--numeric`          | -           | No resuelve direcciones IP a nombres          |
-| `-d`   | `--debug`            | -           | Activa depuración a nivel de socket           |
-| `-i`   | `--interface=DEVICE` | Dispositivo | Especifica interfaz de red a usar             |
-| `-r`   | -                    | -           | Evita enrutamiento normal, envía directamente |
-
-#### Valores TOS (Type of Service)
-
-La opción `-t` permite configurar el campo TOS del header IP:
-
-| Valor | Tipo                 | Descripción        |
-|-------|----------------------|--------------------|
-| `16`  | Low Delay            | Baja latencia      |
-| `4`   | High Reliability     | Alta confiabilidad |
-| `8`   | High Throughput      | Alto rendimiento   |
-| `136` | High Priority        | Alta prioridad     |
-| `184` | Expedited Forwarding | Reenvío expedito   |
 
 ## 📡 Funcionamiento Interno
 
-### Manipulación de TTL
+### Reglas de ensamblado
 
-El campo TTL (Time To Live) en el header IP es fundamental:
+`ft_packet` guarda los bytes finales dentro de un buffer fijo (`MAX_PACKET_LEN = 2048`) y mantiene punteros tipados a las cabeceras ya insertadas. Esto permite validar el orden de las capas mientras se construye el paquete.
 
-```c
-struct ip_header {
-    uint8_t  version_ihl;     // Versión (4 bits) + IHL (4 bits)
-    uint8_t  tos;             // Type of Service
-    uint16_t total_length;    // Longitud total del paquete
-    uint16_t identification;  // ID de fragmentación
-    uint16_t flags_fragment;  // Flags (3 bits) + Fragment offset (13 bits)
-    uint8_t  ttl;             // Time To Live ← Campo clave
-    uint8_t  protocol;        // Protocolo (UDP=17, ICMP=1, TCP=6)
-    uint16_t checksum;        // Checksum del header
-    uint32_t source_addr;     // Dirección IP origen
-    uint32_t dest_addr;       // Dirección IP destino
-};
+Composiciones válidas típicas:
+
+```text
+Ethernet + ARP
+Ethernet + IP + ICMP + Payload
+Ethernet + IP + UDP + Payload
+Ethernet + IP + TCP + TCP options + Payload
+IP + ICMP/UDP/TCP + Payload
 ```
 
-### Procesamiento de Respuestas
+### Lógica de completado
 
-#### Time Exceeded (Tipo 11)
-```c
-struct icmp_time_exceeded {
-    uint8_t  type;            // 11 (Time Exceeded)
-    uint8_t  code;            // 0 (TTL exceeded in transit)
-    uint16_t checksum;        // Checksum ICMP
-    uint32_t unused;          // Campo reservado
-    // Header IP original + 8 bytes de datos originales
-    struct ip_header original_ip;
-    uint8_t original_data[8];
-};
-```
+Los helpers de completado actualizan los campos dependientes del protocolo antes de enviar o analizar el paquete:
 
-#### Destination Unreachable (Tipo 3)
-| Código | Descripción            | Significado                              |
-|--------|------------------------|------------------------------------------|
-| `0`    | Network Unreachable    | Red no alcanzable                        |
-| `1`    | Host Unreachable       | Host no alcanzable                       |
-| `2`    | Protocol Unreachable   | Protocolo no soportado                   |
-| `3`    | Port Unreachable       | Puerto cerrado (UDP traceroute)          |
-| `4`    | Fragmentation Required | Fragmentación necesaria pero DF activado |
+| Helper | Finaliza |
+|--------|----------|
+| `icmp_complete` | Checksum ICMP y longitud/checksum IP cuando aplica |
+| `udp_complete`  | Longitud UDP, checksum UDP y longitud/checksum IP |
+| `tcp_complete`  | Data offset TCP, checksum TCP y longitud/checksum IP |
 
-### Detección de Finalización
+### Cobertura de checksums
 
-La traza termina cuando:
+La librería sigue el modelo estándar de checksum para cada protocolo:
 
-1. `Echo Reply recibido` (para ICMP traceroute)
-2. `Port Unreachable` (para UDP traceroute)
-3. `TCP SYN/ACK` o `RST` (para TCP traceroute)
-4. `Máximo TTL alcanzado` (timeout o límite)
+| Cabecera | Campo de longitud | Cobertura del checksum |
+|----------|-------------------|------------------------|
+| `Ethernet` | No | FCS gestionado por la NIC |
+| `ARP`      | No | Sin checksum |
+| `IP`       | Cabecera + payload | Solo cabecera IP |
+| `ICMP`     | No | Cabecera + payload |
+| `UDP`      | Cabecera + payload | Pseudo-header + cabecera + payload |
+| `TCP`      | Cabecera + payload | Pseudo-header + cabecera + payload |
 
-## 🗺️ Interpretación de Resultados
+## 🗺️ Documentación del proyecto
 
-### Formato de Salida Estándar
+El repositorio incluye notas por protocolo y un plan manual de pruebas:
 
-```
-traceroute to google.com (142.250.185.14), 30 hops max, 60 byte packets
- 1  gateway (192.168.1.1)  1.234 ms  1.567 ms  1.890 ms
- 2  10.0.0.1 (10.0.0.1)  15.234 ms  14.567 ms  16.890 ms
- 3  * * *
- 4  72.14.194.226 (72.14.194.226)  45.123 ms  44.567 ms  43.890 ms
-```
+| Archivo | Contenido |
+|---------|-----------|
+| `doc/Ethernet.md` | Notas sobre tramas Ethernet |
+| `doc/ARP.md`      | Referencia de ARP |
+| `doc/IPv4.md`     | Cabecera IPv4 y opciones |
+| `doc/ICMP.md`     | Tipos de mensajes ICMP |
+| `doc/UDP.md`      | Comportamiento UDP y checksum |
+| `doc/TCP.md`      | Flags y opciones TCP |
+| `doc/test_plan.md`| Escenarios recomendados de validación |
 
-### Interpretación de Símbolos
+### Validación sugerida
 
-| Símbolo |       Significado        |            Causa Probable            |
-| ------- | ------------------------ | ------------------------------------ |
-| `*`     | Sin respuesta            | Firewall, router silencioso, timeout |
-| `!H`    | Host Unreachable         | Destino no alcanzable                |
-| `!N`    | Network Unreachable      | Red no existe o no enrutada          |
-| `!P`    | Protocol Unreachable     | Protocolo bloqueado                  |
-| `!X`    | Communication Prohibited | Filtrado administrativo              |
+El plan de pruebas actual está orientado a inspeccionar paquetes con herramientas como:
 
-### Análisis de Latencias
+- `Wireshark` o `tcpdump` para validar layout y checksums
+- `netcat` para probar payloads UDP
+- Una segunda máquina o servicio para validar handshakes TCP
+- Privilegios `root` cuando se usen raw sockets
 
-```bash
-# Latencias normales
- 5  router.normal.com  25.123 ms  24.567 ms  26.890 ms
-
-# Latencias inconsistentes
- 5  router.congestionado.com  125.123 ms  45.567 ms  186.890 ms
-
-# Pérdida de paquetes
- 5  router.perdidas.com  35.123 ms  *  37.890 ms
-```
 ## ⚠️ Limitaciones y Consideraciones
 
-### Comportamiento de Routers
+### Alcance actual
 
-- `Load Balancing`: Rutas pueden cambiar entre paquetes
-- `ICMP Rate Limiting`: Algunos routers limitan respuestas ICMP
-- `Filtrado Selectivo`: Firewalls pueden bloquear ciertos TTL
-- `Respuestas Asimétricas`: Router A puede responder por Router B
+- `Solo librería estática`: la compilación por defecto no genera ejecutable
+- `Enfoque en construcción`: el envío y la orquestación con sockets quedan fuera de este repositorio
+- `Solo IPv4`: el API público actual trabaja sobre Ethernet, ARP e IPv4
+- `Buffer fijo`: el tamaño de paquete está limitado por `MAX_PACKET_LEN`
 
-### Precisión de Medición
+### Consideraciones prácticas
 
-- `Variabilidad de red`: Latencias pueden fluctuar significativamente
-- `Procesamiento ICMP`: Prioridad baja en muchos routers
-- `Caché de ARP`: Primeras mediciones pueden ser inexactas
-- `QoS`: Type of Service puede afectar el tratamiento de paquetes
+- `El byte order importa`: quien use la librería debe ser consistente con host/network byte order
+- `Pruebas raw`: algunos escenarios requieren privilegios elevados
+- `Orden de protocolos`: `packet_add` rechaza combinaciones de capas inválidas
+- `Alineación de opciones`: IP y TCP requieren opciones alineadas a múltiplos de 4 bytes
 
-### Consideraciones de Seguridad
+### Uso previsto
 
-⚠️ **Uso responsable:**
-- `Respetar políticas` de red organizacionales
-- `Evitar reconocimiento` no autorizado
-- `Considerar rate limiting` para evitar detección como ataque
+Esta librería es adecuada para:
 
-### Detección y Contramedidas
-
-Algunos sistemas pueden detectar:
-- `Patrones de escaneo de puertos` (con TCP traceroute)
-- `Sondeo repetitivo` (múltiples trazas consecutivas)
-- `Patrones anómalos de TTL` (saltos no secuenciales)
-- `Sondeo de alta frecuencia` (intervalos muy cortos)
+- `Aprender` cómo se representan las cabeceras en memoria
+- `Construir paquetes` para experimentos con raw sockets
+- `Probar` checksums y manejo de opciones
+- `Crear tooling` sobre una API pequeña de packet crafting
 
 ## 📄 Licencia
 
@@ -280,6 +210,6 @@ Este proyecto está licenciado bajo la WTFPL – [Do What the Fuck You Want to P
 
 **🧭 Desarrollado como parte del curriculum de 42 School 🧭**
 
-*"From source to destination, every step uncovered"*
+*"Build the packet, byte by byte"*
 
 </div>
