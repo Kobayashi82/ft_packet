@@ -2,7 +2,6 @@
 
 ![System & Kernel](https://img.shields.io/badge/System-brown?style=for-the-badge)
 ![Network Packets](https://img.shields.io/badge/Network-Packets-blue?style=for-the-badge)
-![Protocols](https://img.shields.io/badge/Protocol-Ethernet--ARP--IPv4--ICMP--UDP--TCP-green?style=for-the-badge)
 ![C Language](https://img.shields.io/badge/Language-C-red?style=for-the-badge)
 
 *A static C library for building network packets*
